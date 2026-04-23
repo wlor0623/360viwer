@@ -1,0 +1,686 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8"/>
+    <link rel="icon" type="image/png" sizes="128x128" href="assets/favicon.png">
+    <title>360全景图在线浏览查看器</title>
+
+    <link rel="stylesheet" href="vendor/photo-sphere-viewer/photo-sphere-viewer.min.css"/>
+    <style type="text/css">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            color: #f7fafc;
+            background:
+                radial-gradient(circle at top left, rgba(50, 110, 235, 0.3), transparent 34%),
+                radial-gradient(circle at bottom right, rgba(11, 163, 150, 0.22), transparent 28%),
+                linear-gradient(135deg, #08111d 0%, #101c2d 45%, #16263a 100%);
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        .app {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .viewer-shell {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(1.02);
+            transition: opacity 0.35s ease, transform 0.35s ease;
+        }
+
+        .app--viewer-ready .viewer-shell {
+            opacity: 1;
+            pointer-events: auto;
+            transform: none;
+        }
+
+        #viewer {
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(circle at top, rgba(66, 100, 132, 0.32), transparent 40%),
+                linear-gradient(180deg, #08111d 0%, #111e2f 100%);
+        }
+
+        .viewer-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: linear-gradient(180deg, rgba(3, 10, 18, 0.72) 0%, rgba(3, 10, 18, 0) 26%);
+            transition: background 0.22s ease;
+        }
+
+        .app--toolbar-hidden .viewer-overlay {
+            background: linear-gradient(180deg, rgba(3, 10, 18, 0.18) 0%, rgba(3, 10, 18, 0) 16%);
+        }
+
+        .toolbar {
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            width: min(960px, calc(100% - 32px));
+            margin: 24px auto 0;
+            padding: 14px 18px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 18px;
+            background: rgba(8, 15, 26, 0.68);
+            backdrop-filter: blur(18px);
+            box-shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }
+
+        .app--toolbar-hidden .toolbar {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-18px);
+        }
+
+        .toolbar__meta {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .toolbar__label {
+            font-size: 12px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(151, 189, 255, 0.78);
+        }
+
+        .toolbar__file {
+            font-size: 16px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .toolbar__status {
+            font-size: 13px;
+            color: rgba(223, 231, 241, 0.76);
+        }
+
+        .toolbar__actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .toolbar-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 42px;
+            padding: 10px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(245, 249, 255, 0.88);
+            cursor: pointer;
+            transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+        }
+
+        .toolbar-btn:hover,
+        .toolbar-btn:focus-visible {
+            transform: translateY(-1px);
+            border-color: rgba(170, 207, 255, 0.5);
+            background: rgba(255, 255, 255, 0.14);
+            outline: none;
+        }
+
+        .toolbar-toggle {
+            position: absolute;
+            top: 24px;
+            right: max(16px, calc((100% - 960px) / 2));
+            z-index: 2;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-12px);
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }
+
+        .app--viewer-ready.app--toolbar-hidden .toolbar-toggle {
+            opacity: 1;
+            pointer-events: auto;
+            transform: none;
+        }
+
+        .toolbar__status[data-state="error"] {
+            color: #ffb4b4;
+        }
+
+        .toolbar__status[data-state="success"] {
+            color: #a4efbc;
+        }
+
+        .upload-panel {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            place-items: center;
+            width: 100%;
+            height: 100%;
+            padding: 24px;
+            transition: opacity 0.35s ease, transform 0.35s ease;
+        }
+
+        .app--viewer-ready .upload-panel {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(16px);
+        }
+
+        .upload-card {
+            width: min(720px, 100%);
+            padding: clamp(28px, 5vw, 44px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 30px;
+            background:
+                linear-gradient(180deg, rgba(8, 16, 29, 0.86) 0%, rgba(14, 26, 42, 0.92) 100%);
+            box-shadow: 0 28px 80px rgba(0, 0, 0, 0.36);
+        }
+
+        .eyebrow {
+            margin-bottom: 16px;
+            font-size: 12px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #8fb9ff;
+        }
+
+        h1 {
+            max-width: 10em;
+            font-size: clamp(30px, 5vw, 52px);
+            line-height: 1.06;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .upload-card__desc {
+            max-width: 38rem;
+            margin-top: 18px;
+            font-size: 16px;
+            line-height: 1.7;
+            color: rgba(222, 231, 242, 0.78);
+        }
+
+        .drop-zone {
+            width: 100%;
+            margin-top: 30px;
+            padding: 30px 28px;
+            border: 1px dashed rgba(150, 188, 255, 0.42);
+            border-radius: 24px;
+            background:
+                linear-gradient(135deg, rgba(62, 107, 231, 0.16), rgba(21, 45, 71, 0.28));
+            color: #ffffff;
+            text-align: left;
+            cursor: pointer;
+            transition:
+                transform 0.2s ease,
+                border-color 0.2s ease,
+                background 0.2s ease,
+                box-shadow 0.2s ease;
+        }
+
+        .drop-zone:hover,
+        .drop-zone:focus-visible,
+        .app--dragging .drop-zone {
+            transform: translateY(-2px);
+            border-color: rgba(140, 201, 255, 0.88);
+            background:
+                linear-gradient(135deg, rgba(85, 137, 255, 0.24), rgba(25, 55, 82, 0.44));
+            box-shadow: 0 18px 38px rgba(9, 18, 33, 0.28);
+            outline: none;
+        }
+
+        .drop-zone__title {
+            display: block;
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .drop-zone__hint {
+            display: block;
+            margin-top: 10px;
+            font-size: 15px;
+            color: rgba(229, 235, 243, 0.84);
+        }
+
+        .drop-zone__meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(233, 238, 245, 0.84);
+            font-size: 13px;
+        }
+
+        .actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 22px;
+        }
+
+        .action-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 18px;
+            border: none;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #9ddcff 0%, #8fb8ff 45%, #8cc2a9 100%);
+            color: #0b1522;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+            box-shadow: 0 16px 32px rgba(95, 145, 255, 0.22);
+        }
+
+        .action-btn:hover,
+        .action-btn:focus-visible {
+            transform: translateY(-1px);
+            box-shadow: 0 20px 34px rgba(95, 145, 255, 0.28);
+            outline: none;
+        }
+
+        .action-btn:active {
+            transform: translateY(0);
+            opacity: 0.95;
+        }
+
+        .secondary-text {
+            font-size: 14px;
+            color: rgba(214, 224, 236, 0.76);
+        }
+
+        .status-message {
+            min-height: 24px;
+            margin-top: 18px;
+            font-size: 14px;
+            color: rgba(207, 219, 235, 0.8);
+        }
+
+        .status-message[data-state="error"] {
+            color: #ffb4b4;
+        }
+
+        .status-message[data-state="success"] {
+            color: #a4efbc;
+        }
+
+        .drag-mask {
+            position: absolute;
+            inset: 20px;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed rgba(140, 201, 255, 0.8);
+            border-radius: 32px;
+            background: rgba(7, 15, 28, 0.54);
+            backdrop-filter: blur(16px);
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.985);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        .app--dragging .drag-mask {
+            opacity: 1;
+            transform: none;
+        }
+
+        .drag-mask__content {
+            text-align: center;
+        }
+
+        .drag-mask__eyebrow {
+            font-size: 12px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(162, 199, 255, 0.84);
+        }
+
+        .drag-mask__title {
+            margin-top: 12px;
+            font-size: clamp(24px, 3vw, 36px);
+            font-weight: 700;
+        }
+
+        .drag-mask__hint {
+            margin-top: 10px;
+            font-size: 15px;
+            color: rgba(223, 230, 240, 0.78);
+        }
+
+        @media (max-width: 720px) {
+            .upload-panel {
+                padding: 16px;
+            }
+
+            .upload-card {
+                border-radius: 24px;
+                padding: 24px 20px;
+            }
+
+            .drop-zone {
+                padding: 24px 20px;
+            }
+
+            .drop-zone__title {
+                font-size: 20px;
+            }
+
+            .toolbar {
+                align-items: flex-start;
+                flex-direction: column;
+                width: calc(100% - 24px);
+                margin-top: 16px;
+                padding: 14px;
+            }
+
+            .toolbar__actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .toolbar__file {
+                white-space: normal;
+            }
+
+            .toolbar-toggle {
+                top: 16px;
+                right: 12px;
+            }
+        }
+    </style>
+
+</head>
+<body>
+<script src="vendor/three/three.min.js"></script>
+<script src="vendor/uevent/browser.min.js"></script>
+<script src="vendor/photo-sphere-viewer/photo-sphere-viewer.min.js"></script>
+
+<div class="app" id="app">
+    <div class="viewer-shell">
+        <div id="viewer"></div>
+        <div class="viewer-overlay">
+            <div class="toolbar">
+                <div class="toolbar__meta">
+                    <span class="toolbar__label">360 panorama viewer</span>
+                    <strong class="toolbar__file" id="fileName">等待加载图片</strong>
+                    <span class="toolbar__status" id="toolbarStatus" data-state="idle">拖拽或点击可随时切换图片</span>
+                </div>
+                <div class="toolbar__actions">
+                    <button type="button" class="action-btn" id="changeButton">重新选择图片</button>
+                    <button type="button" class="toolbar-btn" id="hideToolbarButton" aria-expanded="true">隐藏</button>
+                </div>
+            </div>
+            <button type="button" class="toolbar-btn toolbar-toggle" id="showToolbarButton" aria-expanded="false">显示工具栏</button>
+        </div>
+    </div>
+
+    <section class="upload-panel">
+        <div class="upload-card">
+            <p class="eyebrow">Local panorama preview</p>
+            <h1>拖拽或点击，立即查看全景图</h1>
+            <p class="upload-card__desc">
+                把图片拖到下方区域，或者直接点击选择本地文件。载入后仍然可以继续拖入新图片，替换当前预览。
+            </p>
+
+            <button type="button" class="drop-zone" id="dropZone">
+                <span class="drop-zone__title">拖拽图片到这里</span>
+                <span class="drop-zone__hint">也可以点击这里选择图片文件</span>
+                <span class="drop-zone__meta">
+                    <span class="chip">支持 JPG / PNG / WebP</span>
+                    <span class="chip">支持拖入替换当前图片</span>
+                </span>
+            </button>
+
+            <div class="actions">
+                <button type="button" class="action-btn" id="pickButton">选择图片</button>
+                <span class="secondary-text">建议使用 2:1 比例的全景图，浏览效果更稳定。</span>
+            </div>
+
+            <p class="status-message" id="statusMessage" data-state="idle">请选择一张本地图片开始预览。</p>
+        </div>
+    </section>
+
+    <div class="drag-mask" aria-hidden="true">
+        <div class="drag-mask__content">
+            <p class="drag-mask__eyebrow">Drop image</p>
+            <p class="drag-mask__title">释放鼠标即可载入图片</p>
+            <p class="drag-mask__hint">当前页面支持拖拽替换，无需刷新。</p>
+        </div>
+    </div>
+
+    <input id="fileInput" type="file" accept="image/*" hidden>
+</div>
+
+<script type="application/javascript">
+var app = document.getElementById("app");
+var viewerContainer = document.getElementById("viewer");
+var dropZone = document.getElementById("dropZone");
+var pickButton = document.getElementById("pickButton");
+var changeButton = document.getElementById("changeButton");
+var fileInput = document.getElementById("fileInput");
+var statusMessage = document.getElementById("statusMessage");
+var fileName = document.getElementById("fileName");
+var toolbarStatus = document.getElementById("toolbarStatus");
+var hideToolbarButton = document.getElementById("hideToolbarButton");
+var showToolbarButton = document.getElementById("showToolbarButton");
+var viewerInstance = null;
+var currentObjectUrl = null;
+var dragDepth = 0;
+var loadToken = 0;
+
+function setStatus(message, state) {
+    statusMessage.textContent = message;
+    statusMessage.dataset.state = state || "idle";
+    toolbarStatus.textContent = message;
+    toolbarStatus.dataset.state = state || "idle";
+}
+
+function isImageFile(file) {
+    return Boolean(file) && (
+        file.type.indexOf("image/") === 0 ||
+        /\.(avif|bmp|gif|jpe?g|png|svg|tiff?|webp)$/i.test(file.name)
+    );
+}
+
+function openFilePicker() {
+    fileInput.click();
+}
+
+function setToolbarHidden(isHidden) {
+    app.classList.toggle("app--toolbar-hidden", isHidden);
+    hideToolbarButton.setAttribute("aria-expanded", String(!isHidden));
+    showToolbarButton.setAttribute("aria-expanded", String(!isHidden));
+}
+
+function resetDragState() {
+    dragDepth = 0;
+    app.classList.remove("app--dragging");
+}
+
+function destroyViewer() {
+    if (viewerInstance && typeof viewerInstance.destroy === "function") {
+        viewerInstance.destroy();
+    }
+    viewerInstance = null;
+    viewerContainer.innerHTML = "";
+}
+
+function revokeCurrentObjectUrl() {
+    if (currentObjectUrl) {
+        window.URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = null;
+    }
+}
+
+function renderViewer(panoramaUrl, file) {
+    destroyViewer();
+    revokeCurrentObjectUrl();
+
+    viewerInstance = new PhotoSphereViewer.Viewer({
+        container: viewerContainer,
+        panorama: panoramaUrl
+    });
+    currentObjectUrl = panoramaUrl;
+    fileName.textContent = file.name;
+    app.classList.add("app--viewer-ready");
+    setStatus("已加载：" + file.name, "success");
+}
+
+function loadPanorama(file) {
+    var imageProbe;
+    var panoramaUrl;
+    var currentToken;
+
+    if (!file) {
+        return;
+    }
+
+    if (!isImageFile(file)) {
+        setStatus("当前文件不是图片，请重新选择图片文件。", "error");
+        return;
+    }
+
+    currentToken = ++loadToken;
+    panoramaUrl = window.URL.createObjectURL(file);
+    imageProbe = new Image();
+
+    setStatus("正在加载：" + file.name, "idle");
+
+    imageProbe.onload = function() {
+        if (currentToken !== loadToken) {
+            window.URL.revokeObjectURL(panoramaUrl);
+            return;
+        }
+        renderViewer(panoramaUrl, file);
+    };
+
+    imageProbe.onerror = function() {
+        window.URL.revokeObjectURL(panoramaUrl);
+        if (currentToken === loadToken) {
+            setStatus("图片读取失败，请更换文件重试。", "error");
+        }
+    };
+
+    imageProbe.src = panoramaUrl;
+}
+
+function getFirstFile(event) {
+    if (!event.dataTransfer || !event.dataTransfer.files || !event.dataTransfer.files.length) {
+        return null;
+    }
+    return event.dataTransfer.files[0];
+}
+
+function containsFiles(event) {
+    return Boolean(event.dataTransfer && event.dataTransfer.types && Array.prototype.indexOf.call(event.dataTransfer.types, "Files") !== -1);
+}
+
+dropZone.addEventListener("click", openFilePicker);
+pickButton.addEventListener("click", openFilePicker);
+changeButton.addEventListener("click", openFilePicker);
+hideToolbarButton.addEventListener("click", function() {
+    setToolbarHidden(true);
+});
+showToolbarButton.addEventListener("click", function() {
+    setToolbarHidden(false);
+});
+
+fileInput.addEventListener("change", function() {
+    var file = fileInput.files && fileInput.files[0];
+    loadPanorama(file);
+    fileInput.value = "";
+});
+
+window.addEventListener("dragenter", function(event) {
+    if (!containsFiles(event)) {
+        return;
+    }
+    event.preventDefault();
+    dragDepth += 1;
+    app.classList.add("app--dragging");
+});
+
+window.addEventListener("dragover", function(event) {
+    if (!containsFiles(event)) {
+        return;
+    }
+    event.preventDefault();
+    app.classList.add("app--dragging");
+});
+
+window.addEventListener("dragleave", function(event) {
+    if (!containsFiles(event)) {
+        return;
+    }
+    event.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) {
+        app.classList.remove("app--dragging");
+    }
+});
+
+window.addEventListener("drop", function(event) {
+    var file;
+
+    if (!containsFiles(event)) {
+        return;
+    }
+
+    event.preventDefault();
+    resetDragState();
+    file = getFirstFile(event);
+    loadPanorama(file);
+});
+
+window.addEventListener("beforeunload", function() {
+    destroyViewer();
+    revokeCurrentObjectUrl();
+});
+</script>
+
+</body>
+</html>
